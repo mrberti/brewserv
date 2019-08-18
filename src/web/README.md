@@ -1,0 +1,12 @@
+# Ideas
+- Frameworks
+    - Ionic
+    - NativeScript
+- Styling
+    - [Skeleton](http://getskeleton.com/)
+    - [Bulma](https://bulma.io/)
+- Admin Panels
+    - [AdminLTE](https://adminlte.io/)
+- Plugins
+    - Flot
+    - [jQuery Sparklines](https://omnipotent.net/jquery.sparkline)
