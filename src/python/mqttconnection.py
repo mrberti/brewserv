@@ -1,11 +1,16 @@
-import paho.mqtt.client as mqtt
+# Standard includes
 import uuid
 import time
+import threading
 
+# Dependencies
+import paho.mqtt.client as mqtt
+
+# BrewServ
 from variable import Variable
 
 
-class MQTTHandler(object):
+class MQTTConnection(object):
     def __init__(self, server, port=1883, **kwargs):
         self.server = server
         self.port = port
@@ -16,6 +21,8 @@ class MQTTHandler(object):
         self._client = mqtt.Client()
         self._client.on_connect = self.on_connect
         self._client.on_message = self.on_message
+        self._has_new_data_event = threading.Event()
+        self._recent_write_variables = list()
 
     def subscribe_to_variables(self):
         for variable in self.variables:
@@ -37,6 +44,23 @@ class MQTTHandler(object):
         if msg.topic in self.variables:
             vvv = self.variables[msg.topic]
             vvv.push_data(msg.payload.decode("utf-8"))
+            self._has_new_data_event.set()
+            self._recent_write_variables.append(vvv)
+
+    def has_new_data(self):
+        return self._has_new_data_event.is_set()
+
+    def wait_for_new_data(self, timeout=None):
+        self._has_new_data_event.wait(timeout)
+
+    def pop_recent_variable(self):
+        if self._recent_write_variables:
+            var = self._recent_write_variables.pop(0)
+            if not self._recent_write_variables:
+                self._has_new_data_event.clear()
+            yield var
+        else:
+            self._has_new_data_event.clear()
 
     def connect(self):
         if self.user:
@@ -56,14 +80,18 @@ class MQTTHandler(object):
         self._client.subscribe(topic, qos)
 
 def main_test():
-    server = MQTTHandler("192.168.1.80", user="simon", password="supipass")
+    server = MQTTConnection("192.168.1.80", user="simon", password="supipass")
     server.variables["test/esp32-001/temp"] = Variable("test/esp32-001/temp")
+    server.variables["test/esp32-001/hall"] = Variable("test/esp32-001/hall")
     server.connect()
     server.subscribe("test/#")
     server.start()
     while True:
         try:
-            time.sleep(.1)
+            server.wait_for_new_data()
+            for var in server.pop_recent_variable():
+                pass
+                print(var._var["topic"])
         except KeyboardInterrupt:
             break
     server.stop()

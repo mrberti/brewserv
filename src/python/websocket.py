@@ -5,39 +5,69 @@ import threading
 from autobahn.asyncio.websocket import (
     WebSocketServerProtocol, WebSocketServerFactory
 )
+from autobahn.websocket.types import (
+    ConnectionDeny
+)
 
-class WebSocketProtocol(WebSocketServerProtocol):
-    async def onConnect(self, request):
-        print("Client connecting: {}".format(request))
 
-    async def onOpen(self):
-        print("WebSocket connection open.")
+class BrewServWebSocketProtocol(WebSocketServerProtocol):
+    """ This class handles all connection specific requests and
+    messages."""
+
+    # def onConnect(self, request):
+        # print("Client connecting: {}".format(request))
+        # pass
+        # raise ConnectionDeny(ConnectionDeny.BAD_REQUEST, "shut up!")
+
+    def onOpen(self):
+        # print("WebSocket connection open.")
+        self.factory.register(self)
         packet = dict()
         packet["packetType"] = "message"
         packet["message"] = "Welcome to the Autobahn server."
         data = json.dumps(packet).encode("UTF-8")
         self.sendMessage(data)
-        packet = dict()
-        # while True:
-        #     await asyncio.sleep(.05)
-        #     self.sendMessage(json.dumps(packet).encode("UTF-8"))
 
-    async def onMessage(self, payload, isBinary):
+    def onMessage(self, payload, isBinary):
         print(payload)
 
-    async def onClose(self, wasClean, code, reason):
-        print("WebSocket connection closed: {}".format(reason))
+    def onClose(self, wasClean, code, reason):
+        # print("WebSocket connection closed: {}".format(reason))
+        self.factory.unregister(self)
 
-class WebSocketHandler():
-    def __init__(self, host="0.0.0.0", port=5678):
-        self.factory = WebSocketServerFactory()
-        self.factory.protocol = WebSocketProtocol
+
+class BrewServWebSocketServerFactory(WebSocketServerFactory):
+    """This class manages all connections and broadcasting messages."""
+
+    protocol = BrewServWebSocketProtocol
+
+    def __init__(self, daq, **kwargs):
+        WebSocketServerFactory.__init__(self, **kwargs)
+        self.daq = daq
+        self.clients = list()
+
+    def xxx(self, t):
+        print("xxxxx " + t + " -------------")
+
+    def register(self, client):
+        if client not in self.clients:
+            self.clients.append(client)
+
+    def unregister(self, client):
+        if client in self.clients:
+            self.clients.remove(client)
+
+
+class WebSocketHandler(object):
+    def __init__(self, host, port, daq=None):
         self.host = host
         self.port = port
         self._thread = None
         self._is_running = threading.Event()
+        self.factory = BrewServWebSocketServerFactory(daq=daq)
 
     async def _wakeup(self):
+        """ HACK to bypass a bug that misses KeyboardInterrupts."""
         while True:
             await asyncio.sleep(1)
             print("wakeup")
@@ -75,7 +105,7 @@ class WebSocketHandler():
 
 
 def main_test():
-    ws_handler = WebSocketHandler()
+    ws_handler = WebSocketHandler("0.0.0.0", 5678)
     ws_handler.loop_start()
     while True:
         try:
