@@ -2,6 +2,7 @@ import time
 import json
 import collections
 import threading
+import math
 from pathlib import Path
 
 
@@ -22,14 +23,14 @@ class Variable(object):
         self._lock = threading.Lock()
         self._has_new_data = threading.Event()
 
-    def _create_filename(self, data_folder=None):
+    def _create_filename(self, data_folder=None, ext="json"):
         if not data_folder:
             data_folder = DEFAULT_DATA_FOLDER
         data_folder = Path(data_folder)
 
         filename = self._var["topic"]
-        if not filename.endswith(".json"):
-            filename += ".json"
+        if not filename.endswith("." + ext):
+            filename += "." + ext
         filename = Path(filename)
 
         filepath = Path(data_folder / filename)
@@ -38,19 +39,58 @@ class Variable(object):
     def load(self, data_folder=None):
         filename = self._create_filename(data_folder)
         if filename.exists():
+            print("Loading from: '{}'".format(filename))
             with self._lock:
                 with open(filename, "r") as f:
                     self._var = json.load(f)
         else:
             print("WARNING: File '{}' does not exist.".format(filename))
 
-    def save(self, data_folder=None):
-        filename = self._create_filename(data_folder)
+    def save(self, data_folder=None, type="json"):
+        filename = self._create_filename(data_folder, type)
         filename.parent.mkdir(parents=True, exist_ok=True)
         print("saving to: '{}'".format(filename))
         with self._lock:
             with open(filename, "w") as f:
-                json.dump(self._var, f, indent=2)
+                if type.lower() == "json":
+                    json.dump(self._var, f, indent=2)
+                elif type.lower() == "csv":
+                    f.write(self.to_csv())
+                else:
+                    raise Exception("Filetyp '{}' not supported.".format(type))
+
+    def to_csv(self):
+        """FIXME: This implementation is a little bit dirty. The data might be
+        saved as ints or iterables like lists or dicts, so the handling gets
+        quite nasty."""
+        lines = list()
+        line_one = ["timestamp"]
+        topic = str(self._var["topic"])
+        data = self._var["data"][self._var["last_update"]]
+        print(data)
+        try:
+            x = list()
+            for label in data.keys():
+                x.append(topic + "/" + label)
+            line_one.extend(x)
+        except AttributeError:
+            line_one.append(topic)
+        lines.append(",".join(line_one))
+        for timestamp, data in self._var["data"].items():
+            data_entries = list()
+            if isinstance(data, str):
+                data_entries.append(str(data))
+            else:
+                try:
+                    for data_entry in data.values():
+                        data_entries.append(str(data_entry))
+                except AttributeError:
+                    data_entries.append(str(data))
+            items = [str(int(timestamp) / 1e9)]
+            items.extend(data_entries)
+            line = ",".join(items)
+            lines.append(line)
+        return "\n".join(lines)
 
     def push_data(self, data, timestamp=None, **kwargs):
         """
@@ -107,7 +147,8 @@ def main():
     var.load()
     s = time.time()
     for i in range(10):
-        var.push_data(str(i))
+        # var.push_data({"a": i, "b": math.sqrt(i)})
+        var.push_data(i)
         a =  time.time()
         while time.time() == a:
             pass
@@ -124,7 +165,7 @@ def main():
     delta = round(time.time() - s, 3)
     print("delta = " + str(delta) + " s")
     print(len(var.get_data()))
-    var.save()
+    var.save(type="csv")
 
 if __name__ == "__main__":
     main()
